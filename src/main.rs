@@ -5,6 +5,7 @@
 #![no_main]
 
 use bsp::entry;
+use cortex_m::{delay::Delay, prelude::_embedded_hal_digital_OutputPin};
 use defmt::*;
 use defmt_rtt as _;
 use display_interface_spi::SPIInterface;
@@ -13,10 +14,7 @@ use embedded_hal::digital::OutputPin;
 use mipidsi::{models::ST7789, Builder};
 use panic_probe as _;
 
-// Provide an alias for our BSP so we can switch targets quickly.
-// Uncomment the BSP you included in Cargo.toml, the rest of the code does not need to change.
 use rp_pico::{self as bsp, hal};
-// use sparkfun_pro_micro_rp2040 as bsp;
 
 use bsp::hal::{
     clocks::{init_clocks_and_plls, Clock},
@@ -25,8 +23,11 @@ use bsp::hal::{
     watchdog::Watchdog,
 };
 
+const XOSC_CRYSTAL_FREQ: u32 = 12_000_000; // Typically found in BSP crates
 #[entry]
 fn main() -> ! {
+    // Get access to device and core peripherals
+
     info!("Program start");
     let mut pac = pac::Peripherals::take().unwrap();
     let core = pac::CorePeripherals::take().unwrap();
@@ -46,7 +47,6 @@ fn main() -> ! {
     )
     .ok()
     .unwrap();
-
     let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
 
     let pins = bsp::Pins::new(
@@ -57,25 +57,28 @@ fn main() -> ! {
     );
 
     // These are implicitly used by the spi driver if they are in the correct mode
+    info!("Initializing SPI");
     let spi_mosi = pins.gpio7.into_function::<hal::gpio::FunctionSpi>();
     let spi_miso = pins.gpio4.into_function::<hal::gpio::FunctionSpi>();
     let spi_sclk = pins.gpio6.into_function::<hal::gpio::FunctionSpi>();
+    let spi = hal::spi::Spi::<_, _, _, 8>::new(pac.SPI0, (spi_mosi, spi_miso, spi_sclk));
+    let spi = spi.init();
+    info!("Initialized SPI");
+    let dc = pins.gpio16;
+    let rst = pins.gpio14;
+    let di = SPIInterface::new(spi, dc);
 
-    // This is the correct pin on the Raspberry Pico board. On other boards, even if they have an
-    // on-board LED, it might need to be changed.
-    //
-    // Notably, on the Pico W, the LED is not connected to any of the RP2040 GPIOs but to the cyw43 module instead.
-    // One way to do that is by using [embassy](https://github.com/embassy-rs/embassy/blob/main/examples/rp/src/bin/wifi_blinky.rs)
-    //
-    // If you have a Pico W and want to toggle a LED with a simple GPIO output pin, you can connect an external
-    // LED to one of the GPIO pins, and reference that pin here. Don't forget adding an appropriate resistor
-    // in series with the LED.
+    // create the ILI9486 display driver in rgb666 color mode from the display interface and use a HW reset pin during init
+    let mut display = Builder(ST7789, di).reset_pin(rst).init(&mut delay)?; // delay provider from your MCU
+                                                                            // clear the display to black
+    display.clear(Rgb666::CSS_RED)?;
+
     let mut led_pin = pins.gpio15.into_push_pull_output();
-
     loop {
         info!("on!");
         led_pin.set_high().unwrap();
         delay.delay_ms(500);
+
         info!("off!");
         led_pin.set_low().unwrap();
         delay.delay_ms(500);

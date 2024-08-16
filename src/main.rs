@@ -13,9 +13,9 @@ use defmt_rtt as _;
 use display_interface_spi::SPIInterface;
 use embedded_graphics_core::{pixelcolor::Rgb666, prelude::WebColors};
 use embedded_hal::digital::OutputPin;
-use mipidsi::{models::ST7789, Builder};
 use panic_probe as _;
 
+use rp2040_st7789::st7789::ST7789Display;
 use rp_pico::hal::fugit::RateExtU32;
 use rp_pico::hal::gpio::bank0::Gpio6;
 use rp_pico::hal::spi::SpiDevice;
@@ -65,9 +65,8 @@ fn main() -> ! {
     // These are implicitly used by the spi driver if they are in the correct mode
     info!("Initializing SPI");
     let spi_mosi = pins.gpio7.into_function::<hal::gpio::FunctionSpi>();
-    let spi_miso = pins.gpio4.into_function::<hal::gpio::FunctionSpi>();
     let spi_sclk = pins.gpio6.into_function::<hal::gpio::FunctionSpi>();
-    let spi = hal::spi::Spi::<_, _, _, 8>::new(peripherals.SPI0, (spi_mosi, spi_miso, spi_sclk));
+    let spi = hal::spi::Spi::<_, _, _, 8>::new(peripherals.SPI0, (spi_mosi, spi_sclk));
     let spi = spi.init(
         &mut peripherals.RESETS,
         clocks.peripheral_clock.freq(),
@@ -75,14 +74,22 @@ fn main() -> ! {
         &embedded_hal::spi::MODE_0,
     );
     info!("Initialized SPI");
-    let dc = pins.gpio16;
-    let rst = pins.gpio14;
-    let di = SPIInterface::new(spi, dc);
+    let dc = pins.gpio16.into_push_pull_output();
+    let rst = pins.gpio14.into_push_pull_output();
 
+    let mut display = ST7789Display::new(
+        rst,
+        dc,
+        NoneT,
+        NoneT,
+        spi,
+        240,
+        240,
+        Rotation::Portrait,
+        &mut delay,
+    );
     // create the ILI9486 display driver in rgb666 color mode from the display interface and use a HW reset pin during init
-    let mut display = Builder::new(ST7789, spi).reset_pin(rst).init(&mut delay)?; // delay provider from your MCU
-                                                                                  // clear the display to black
-    display.clear(Rgb666::CSS_RED)?;
+    // clear the display to black
 
     let mut led_pin = pins.gpio15.into_push_pull_output();
     loop {

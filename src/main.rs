@@ -7,12 +7,15 @@
 use bsp::entry;
 use defmt::*;
 use defmt_rtt as _;
+use display_interface_spi::SPIInterface;
+use embedded_graphics_core::{pixelcolor::Rgb666, prelude::WebColors};
 use embedded_hal::digital::OutputPin;
+use mipidsi::{models::ST7789, Builder};
 use panic_probe as _;
 
 // Provide an alias for our BSP so we can switch targets quickly.
 // Uncomment the BSP you included in Cargo.toml, the rest of the code does not need to change.
-use rp_pico as bsp;
+use rp_pico::{self as bsp, hal};
 // use sparkfun_pro_micro_rp2040 as bsp;
 
 use bsp::hal::{
@@ -53,6 +56,11 @@ fn main() -> ! {
         &mut pac.RESETS,
     );
 
+    // These are implicitly used by the spi driver if they are in the correct mode
+    let spi_mosi = pins.gpio7.into_function::<hal::gpio::FunctionSpi>();
+    let spi_miso = pins.gpio4.into_function::<hal::gpio::FunctionSpi>();
+    let spi_sclk = pins.gpio6.into_function::<hal::gpio::FunctionSpi>();
+
     // This is the correct pin on the Raspberry Pico board. On other boards, even if they have an
     // on-board LED, it might need to be changed.
     //
@@ -62,7 +70,7 @@ fn main() -> ! {
     // If you have a Pico W and want to toggle a LED with a simple GPIO output pin, you can connect an external
     // LED to one of the GPIO pins, and reference that pin here. Don't forget adding an appropriate resistor
     // in series with the LED.
-    let mut led_pin = pins.led.into_push_pull_output();
+    let mut led_pin = pins.gpio15.into_push_pull_output();
 
     loop {
         info!("on!");

@@ -7,18 +7,20 @@
 use core::any::Any;
 
 use bsp::entry;
+use cortex_m::prelude::_embedded_hal_blocking_spi_Write;
 use cortex_m::{delay::Delay, prelude::_embedded_hal_digital_OutputPin};
 use defmt::*;
 use defmt_rtt as _;
-use display_interface_spi::SPIInterface;
-use embedded_graphics_core::{pixelcolor::Rgb666, prelude::WebColors};
 use embedded_hal::digital::OutputPin;
 use panic_probe as _;
 
-use rp2040_st7789::st7789::ST7789Display;
+use rp2040_project_template::font::Font;
+use rp2040_project_template::st7789::{self, ColorMode, Rotation, ST7789Display};
+use rp2040_project_template::{font, fonts};
 use rp_pico::hal::fugit::RateExtU32;
 use rp_pico::hal::gpio::bank0::Gpio6;
 use rp_pico::hal::spi::SpiDevice;
+use rp_pico::hal::typelevel::OptionTNone;
 use rp_pico::hal::Spi;
 use rp_pico::{self as bsp, hal};
 
@@ -70,35 +72,39 @@ fn main() -> ! {
     let spi = spi.init(
         &mut peripherals.RESETS,
         clocks.peripheral_clock.freq(),
-        1_000_000u32.Hz(),
-        &embedded_hal::spi::MODE_0,
+        100.MHz(),
+        &embedded_hal::spi::MODE_3,
     );
     info!("Initialized SPI");
+    info!("Initializing display");
     let dc = pins.gpio16.into_push_pull_output();
     let rst = pins.gpio14.into_push_pull_output();
-
     let mut display = ST7789Display::new(
         rst,
         dc,
-        NoneT,
-        NoneT,
+        OptionTNone,
+        OptionTNone,
         spi,
         240,
         240,
         Rotation::Portrait,
         &mut delay,
     );
-    // create the ILI9486 display driver in rgb666 color mode from the display interface and use a HW reset pin during init
-    // clear the display to black
 
-    let mut led_pin = pins.gpio15.into_push_pull_output();
+    let mut x = 0;
+    let mut y = 0;
+    let width = 10;
+    let height = 10;
+
     loop {
-        info!("on!");
-        led_pin.set_high().unwrap();
-        delay.delay_ms(500);
-
-        info!("off!");
-        led_pin.set_low().unwrap();
-        delay.delay_ms(500);
+        update_location(&mut x, &mut y);
+        display.fill(0);
+        display.draw_solid_rect(x, y, width, height, 0xffff);
+        delay.delay_ms(40);
     }
+}
+
+fn update_location(x: &mut u16, y: &mut u16) {
+    *x = (*x + 4) % 230;
+    *y = (*y + 4) % 230;
 }

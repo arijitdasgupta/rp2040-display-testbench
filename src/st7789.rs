@@ -1,8 +1,14 @@
 use core::mem;
 use core::ops::BitOr;
 
-use rp_pico::hal::gpio::SioOutput;
-use rp_pico::hal::spi::{SpiDevice, ValidPinSck, ValidPinTx, ValidSpiPinout};
+use embedded_hal::spi::SpiBus;
+use rp_pico::hal::gpio::bank0::{Gpio6, Gpio7};
+use rp_pico::hal::gpio::qspi::Pins;
+use rp_pico::hal::gpio::{self, DynPinId, PullNone, SioOutput};
+use rp_pico::hal::spi::{
+    SpiDevice, ValidOptionSck, ValidOptionTx, ValidPinIdSck, ValidPinIdTx, ValidPinSck, ValidPinTx,
+    ValidSpiPinout,
+};
 use rp_pico::{self as bsp, hal};
 
 use crate::font::Font;
@@ -10,7 +16,7 @@ use bsp::pac;
 use cortex_m::delay::Delay;
 use embedded_hal::digital::OutputPin;
 use hal::gpio::{Pin, PinId};
-use hal::spi::{Enabled, SpiDevice};
+use hal::spi::Enabled;
 use hal::typelevel::OptionTNone;
 
 #[repr(u8)]
@@ -94,9 +100,7 @@ pub trait OptionalOutputPin {
     fn is_none(&self) -> bool;
 }
 
-impl<L: PinId> OptionalOutputPin
-    for Pin<L, hal::gpio::FunctionSio<SioOutput>, hal::gpio::PullBusKeep>
-{
+impl<L: PinId> OptionalOutputPin for Pin<L, gpio::FunctionSio<SioOutput>, gpio::PullDown> {
     fn set(&mut self, value: bool) {
         if value {
             self.set_high().unwrap();
@@ -118,24 +122,25 @@ impl OptionalOutputPin for OptionTNone {
 }
 
 /// The ST7789 display driver.
-pub struct ST7789Display<K, L, M, N, D>
+pub struct ST7789Display<K, L, M, N, D, P>
 where
     K: OptionalOutputPin,
     L: PinId,
     M: OptionalOutputPin,
     N: OptionalOutputPin,
     D: SpiDevice,
+    P: ValidSpiPinout<D>,
 {
     /// Reset
     reset_pin: K,
     /// Data/Command
-    dc_pin: Pin<L, hal::gpio::FunctionSio<SioOutput>, hal::gpio::PullBusKeep>,
+    dc_pin: Pin<L, gpio::FunctionSio<SioOutput>, gpio::PullDown>,
     /// Chip select
     cs_pin: M,
     /// Backlight
     bl_pin: N,
     /// SPI
-    spi: hal::spi::Spi<Enabled, D, (ValidPinTx, ValidPinSck), 8>,
+    spi: hal::spi::Spi<Enabled, D, P, 8>,
     /// the width of the display in pixels
     width: u16,
     /// the height of the display in pixels
@@ -145,21 +150,27 @@ where
 const BUFFER_SIZE: u16 = 512;
 
 #[allow(dead_code)]
-impl<K: OptionalOutputPin, L: PinId, M: OptionalOutputPin, N: OptionalOutputPin, S: SpiDevice>
-    ST7789Display<K, L, M, N, S>
+impl<
+        K: OptionalOutputPin,
+        L: PinId,
+        M: OptionalOutputPin,
+        N: OptionalOutputPin,
+        S: SpiDevice,
+        P: ValidSpiPinout<S>,
+    > ST7789Display<K, L, M, N, S, P>
 {
     /// Creates a new display driver.
     pub fn new(
         // Reset
         reset_pin: K,
         // Data/Command
-        dc_pin: Pin<L, hal::gpio::FunctionSio<SioOutput>, hal::gpio::PullBusKeep>,
+        dc_pin: Pin<L, gpio::FunctionSio<SioOutput>, gpio::PullDown>,
         // Chip select
         cs_pin: M,
         // Backlight
         bl_pin: N,
         // SPI
-        spi: hal::spi::Spi<Enabled, S, (ValidSpiPinout::Tx, ValidSpiPinout::Sck), 8>,
+        spi: hal::spi::Spi<Enabled, S, P, 8>,
         width: u16,
         height: u16,
         rotation: Rotation,
@@ -223,6 +234,7 @@ impl<K: OptionalOutputPin, L: PinId, M: OptionalOutputPin, N: OptionalOutputPin,
         self.dc_pin.set_high().unwrap();
         self.spi.write(data).unwrap();
         self.cs_pin.set(true);
+        self.dc_pin.set_low().unwrap();
     }
 
     /// Reset by sending a software reset command.

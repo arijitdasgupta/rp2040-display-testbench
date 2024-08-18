@@ -1,3 +1,8 @@
+# RP2040 + ST7789 LCD display testbench
+I merged,
+ - [RP2040 Starter Template](https://github.com/rp-rs/rp2040-project-template)
+ - [RP2040 HAL ST7789 Driver](https://github.com/ri-char/rp2040-st7789)
+
 # Project template for rp2040-hal
 
 This template is intended as a starting point for developing your own firmware based on the rp2040-hal.

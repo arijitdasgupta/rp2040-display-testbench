@@ -98,10 +98,6 @@ fn main() -> ! {
     let mut color = 0x0000;
 
     loop {
-        if x == 0 && y == 0 {
-            display.fill(0);
-        }
-
         update_location_and_colour(&mut x, &mut y, &mut color);
         display.draw_solid_rect(x, y, width, height, color);
         delay.delay_ms(40);
@@ -110,7 +106,7 @@ fn main() -> ! {
 
 fn update_location_and_colour(x: &mut u16, y: &mut u16, color: &mut u16) {
     *x = x.checked_add(1).unwrap_or(0) % 230;
-    *y = y.checked_add(4).unwrap_or(0) % 230;
+    *y = y.checked_add(8).unwrap_or(0) % 230;
 
     *color = color.checked_add(127).unwrap_or(0);
 }

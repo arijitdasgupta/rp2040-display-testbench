@@ -145,6 +145,8 @@ where
     width: u16,
     /// the height of the display in pixels
     height: u16,
+    /// screen buffer size
+    buf_size: u16,
 }
 
 const BUFFER_SIZE: u16 = 512;
@@ -171,8 +173,6 @@ impl<
         bl_pin: N,
         // SPI
         spi: hal::spi::Spi<Enabled, S, P, 8>,
-        width: u16,
-        height: u16,
         rotation: Rotation,
         delay: &mut Delay,
     ) -> Self {
@@ -182,8 +182,9 @@ impl<
             cs_pin,
             bl_pin,
             spi,
-            width,
-            height,
+            height: 240,
+            width: 240,
+            buf_size: 57600, // 240 x 240
         };
 
         i.hard_reset(delay);
@@ -329,11 +330,11 @@ impl<
     /// Draw the color buffer into an area.
     ///
     /// The `bitmap` is a color array of `u16`.
-    pub fn draw_color_buf(&mut self, bitmap: &[u16], x: u16, y: u16, width: u16, height: u16) {
-        assert_eq!(bitmap.len(), width as usize * height as usize);
-        self.set_window(x, y, x + width - 1, y + height - 1);
-        let chunks = (width * height) / BUFFER_SIZE;
-        let rest = (width * height) % BUFFER_SIZE;
+    pub fn draw_color_buf(&mut self, bitmap: &[u16]) {
+        assert_eq!(bitmap.len(), self.width as usize * self.height as usize);
+        self.set_window(0, 0, self.width - 1, self.height - 1);
+        let chunks = (self.width * self.height) / BUFFER_SIZE;
+        let rest = (self.width * self.height) % BUFFER_SIZE;
 
         let buf: &mut [u8] = &mut [0u8; BUFFER_SIZE as usize * 2];
 
@@ -360,6 +361,8 @@ impl<
     ///
     /// The `buf` is a color array of `u8` which encoded with big-endian.
     pub fn draw_color_buf_raw(&mut self, buffer: &[u8], x: u16, y: u16, width: u16, height: u16) {
+        // TODO:
+        // Remove width and height
         assert_eq!(buffer.len(), width as usize * height as usize * 2);
         self.set_window(x, y, x + width - 1, y + height - 1);
         self.send_data(buffer);

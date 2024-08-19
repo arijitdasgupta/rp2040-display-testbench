@@ -8,6 +8,7 @@ use core::any::Any;
 
 use bsp::entry;
 use cortex_m::prelude::_embedded_hal_blocking_spi_Write;
+use cortex_m::singleton;
 use cortex_m::{delay::Delay, prelude::_embedded_hal_digital_OutputPin};
 use defmt::*;
 use defmt_rtt as _;
@@ -31,7 +32,9 @@ use bsp::hal::{
     watchdog::Watchdog,
 };
 
+const FRAMEBUFFER_SIZE: usize = 57600;
 const XOSC_CRYSTAL_FREQ: u32 = 12_000_000; // Typically found in BSP crates
+const SCREEN_WIDTH: usize = 240;
 #[entry]
 fn main() -> ! {
     // Get access to device and core peripherals
@@ -78,35 +81,42 @@ fn main() -> ! {
     info!("Initialized SPI");
     info!("Initializing display");
     let dc = pins.gpio16.into_push_pull_output();
-    let rst = pins.gpio14.into_push_pull_output();
+    let rst = pins.gpio15.into_push_pull_output();
     let mut display = ST7789Display::new(
         rst,
         dc,
         OptionTNone,
         OptionTNone,
         spi,
-        240,
-        240,
         Rotation::Portrait,
         &mut delay,
     );
 
-    let mut x = 0;
-    let mut y = 0;
-    let width = 10;
-    let height = 10;
-    let mut color = 0x0000;
+    let bmp_framebuffer =
+        singleton!(: [u16; FRAMEBUFFER_SIZE] = [0x0000; FRAMEBUFFER_SIZE]).unwrap();
+    let mut color_offset: u8 = 0x00;
 
     loop {
-        update_location_and_colour(&mut x, &mut y, &mut color);
-        display.draw_solid_rect(x, y, width, height, color);
+        for i in 0..FRAMEBUFFER_SIZE {
+            let y = i / SCREEN_WIDTH;
+            let x = i % SCREEN_WIDTH;
+            bmp_framebuffer[i] = rgb(
+                x.try_into().unwrap(),
+                y.try_into().unwrap(),
+                u8::MAX - color_offset,
+            );
+        }
+
+        color_offset = color_offset.checked_add(0xf).unwrap_or(0);
+        display.draw_color_buf(bmp_framebuffer);
         delay.delay_ms(40);
     }
 }
 
-fn update_location_and_colour(x: &mut u16, y: &mut u16, color: &mut u16) {
-    *x = x.checked_add(1).unwrap_or(0) % 230;
-    *y = y.checked_add(8).unwrap_or(0) % 230;
-
-    *color = color.checked_add(127).unwrap_or(0);
+fn rgb(r: u8, g: u8, b: u8) -> u16 {
+    let br: u16 = Into::<u16>::into(r) >> 3;
+    let bg: u16 = Into::<u16>::into(g) >> 2;
+    let bb: u16 = Into::<u16>::into(b) >> 3;
+    let result: u16 = (br << 11) + (bg << 5) + bb;
+    return result;
 }

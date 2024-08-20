@@ -123,7 +123,7 @@ impl OptionalOutputPin for OptionTNone {
 }
 
 /// The ST7789 display driver.
-pub struct ST7789Display<K, L, M, N, D, P>
+pub struct ST7789Display<'a, K, L, M, N, D, P>
 where
     K: OptionalOutputPin,
     L: PinId,
@@ -141,7 +141,7 @@ where
     /// Backlight
     bl_pin: N,
     /// SPI
-    spi: hal::spi::Spi<Enabled, D, P, 8>,
+    spi: &'a mut hal::spi::Spi<Enabled, D, P, 8>,
     /// the width of the display in pixels
     width: u16,
     /// the height of the display in pixels
@@ -154,16 +154,17 @@ const BUFFER_SIZE: u16 = 4096;
 
 #[allow(dead_code)]
 impl<
+        'a,
         K: OptionalOutputPin,
         L: PinId,
         M: OptionalOutputPin,
         N: OptionalOutputPin,
         S: SpiDevice,
         P: ValidSpiPinout<S>,
-    > ST7789Display<K, L, M, N, S, P>
+    > ST7789Display<'a, K, L, M, N, S, P>
 {
     /// Creates a new display driver.
-    pub fn new(
+    pub fn init(
         // Reset
         reset_pin: K,
         // Data/Command
@@ -173,7 +174,7 @@ impl<
         // Backlight
         bl_pin: N,
         // SPI
-        spi: hal::spi::Spi<Enabled, S, P, 8>,
+        spi: &'a mut hal::spi::Spi<Enabled, S, P, 8>,
         rotation: Rotation,
         delay: &mut Delay,
     ) -> Self {
@@ -204,6 +205,7 @@ impl<
         i.set_xhz_refresh_rate();
         delay.delay_ms(100);
         i.set_window(0, 0, i.width - 1, i.height - 1);
+        i.dc_pin.set_high().unwrap();
 
         i
     }
@@ -339,9 +341,9 @@ impl<
     /// Draw the color buffer into an area.
     ///
     /// The `bitmap` is a color array of `u16`.
-    pub fn draw_buf(&mut self, bitmap: &[u16]) {
+    pub fn push_buffer(&mut self, bitmap: &[u16]) {
         assert_eq!(bitmap.len(), self.width as usize * self.height as usize);
-        self.set_window(0, 0, self.height, self.width);
+        self.set_window(0, 0, self.width - 1, self.height - 1);
         let chunks = bitmap.len() as u16 / BUFFER_SIZE;
         let rest = bitmap.len() as u16 % BUFFER_SIZE;
         let mut buf: [u8; (BUFFER_SIZE * 2) as usize] = [0x0; (BUFFER_SIZE * 2) as usize];

@@ -18,11 +18,13 @@ use panic_probe as _;
 use rp2040_project_template::font::Font;
 use rp2040_project_template::st7789::{self, ColorMode, Rotation, ST7789Display};
 use rp2040_project_template::{font, fonts};
+use rp_pico::hal::dma::{single_buffer, DMAExt};
 use rp_pico::hal::fugit::RateExtU32;
 use rp_pico::hal::gpio::bank0::Gpio6;
 use rp_pico::hal::spi::SpiDevice;
 use rp_pico::hal::typelevel::OptionTNone;
 use rp_pico::hal::Spi;
+use rp_pico::pac::ppb::SCR;
 use rp_pico::{self as bsp, hal};
 
 use bsp::hal::{
@@ -32,7 +34,7 @@ use bsp::hal::{
     watchdog::Watchdog,
 };
 
-const FRAMEBUFFER_SIZE: usize = 57600;
+const FRAMEBUFFER_SIZE: usize = 57600 * 2;
 const XOSC_CRYSTAL_FREQ: u32 = 12_000_000; // Typically found in BSP crates
 const SCREEN_WIDTH: usize = 240;
 #[entry]
@@ -72,51 +74,53 @@ fn main() -> ! {
     let spi_mosi = pins.gpio7.into_function::<hal::gpio::FunctionSpi>();
     let spi_sclk = pins.gpio6.into_function::<hal::gpio::FunctionSpi>();
     let spi = hal::spi::Spi::<_, _, _, 8>::new(peripherals.SPI0, (spi_mosi, spi_sclk));
-    let spi = spi.init(
+    let mut spi = spi.init(
         &mut peripherals.RESETS,
         clocks.peripheral_clock.freq(),
-        47.MHz(),
+        200.MHz(),
         &embedded_hal::spi::MODE_3,
     );
     info!("Initialized SPI");
     info!("Initializing display");
     let dc = pins.gpio16.into_push_pull_output();
     let rst = pins.gpio15.into_push_pull_output();
-    let mut display = ST7789Display::new(
+    let mut display = ST7789Display::init(
         rst,
         dc,
         OptionTNone,
         OptionTNone,
-        spi,
+        &mut spi,
         Rotation::Portrait,
         &mut delay,
     );
 
-    let bmp_framebuffer =
-        singleton!(: [u16; FRAMEBUFFER_SIZE] = [0x0000; FRAMEBUFFER_SIZE]).unwrap();
+    let bmp_framebuffer = singleton!(: [u8; FRAMEBUFFER_SIZE] = [0xfe; FRAMEBUFFER_SIZE]).unwrap();
     let mut color_offset: u8 = 0x00;
+    let dma = peripherals.DMA.split(&mut peripherals.RESETS);
+    let mut transfer = single_buffer::Config::new(dma.ch0, bmp_framebuffer, spi);
+    info!("Starting transfer");
 
-    let mut x: u8 = 0;
-    let mut y: u8 = 0;
-    let w: u8 = 15;
-    let h: u8 = 15;
     loop {
+        info!("Looping");
+
+        let t = transfer.start();
+        let (ch, from, to) = t.wait();
+
         // update framebuffer
-        for i in 0..FRAMEBUFFER_SIZE {
-            let disp_y: u8 = (i / SCREEN_WIDTH).try_into().unwrap();
-            let disp_x: u8 = (i % SCREEN_WIDTH).try_into().unwrap();
-            if disp_x >= x && disp_y >= y && disp_x < (x + w) && disp_y < (y + h) {
-                bmp_framebuffer[i] = rgb(0xff, color_offset, color_offset);
+        for i in 0..from.len() {
+            if i % 2 == i % 5 {
+                from[i] = color_offset;
             } else {
-                bmp_framebuffer[i] = rgb(0xf, 0xf, color_offset);
+                from[i] = 0x0;
             }
         }
 
-        color_offset = color_offset.checked_add(0xf).unwrap_or(0);
-        x = x.checked_add(1).unwrap_or(0);
-        y = y.checked_add(2).unwrap_or(0);
-        display.draw_buf(bmp_framebuffer);
-        delay.delay_ms(40);
+        transfer = single_buffer::Config::new(ch, from, to);
+
+        color_offset = color_offset.checked_add(0x1).unwrap_or(0);
+
+        // display.push_buffer(bmp_framebuffer);
+        delay.delay_ms(100);
     }
 }
 

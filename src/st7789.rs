@@ -43,6 +43,7 @@ pub enum Command {
     Colmod = 0x3A,
     Madctl = 0x36,
     Vscsad = 0x37,
+    Frctrl2 = 0xC6,
 }
 
 #[repr(u8)]
@@ -149,7 +150,7 @@ where
     buf_size: u16,
 }
 
-const BUFFER_SIZE: u16 = 512;
+const BUFFER_SIZE: u16 = 4096;
 
 #[allow(dead_code)]
 impl<
@@ -200,7 +201,10 @@ impl<
         i.bl_pin.set(true);
         i.fill(0);
         i.send_command(Command::Dispon);
-        delay.delay_ms(500);
+        i.set_xhz_refresh_rate();
+        delay.delay_ms(100);
+        i.set_window(0, 0, i.width - 1, i.height - 1);
+
         i
     }
 
@@ -262,6 +266,11 @@ impl<
         } else {
             self.send_command(Command::Invoff);
         }
+    }
+
+    pub fn set_xhz_refresh_rate(&mut self) {
+        self.send_command(Command::Frctrl2);
+        self.send_data(&[0x0f]);
     }
 
     /// Set the display to color mode.
@@ -330,13 +339,12 @@ impl<
     /// Draw the color buffer into an area.
     ///
     /// The `bitmap` is a color array of `u16`.
-    pub fn draw_color_buf(&mut self, bitmap: &[u16]) {
+    pub fn draw_buf(&mut self, bitmap: &[u16]) {
         assert_eq!(bitmap.len(), self.width as usize * self.height as usize);
-        self.set_window(0, 0, self.width - 1, self.height - 1);
-        let chunks = (self.width * self.height) / BUFFER_SIZE;
-        let rest = (self.width * self.height) % BUFFER_SIZE;
-
-        let buf: &mut [u8] = &mut [0u8; BUFFER_SIZE as usize * 2];
+        self.set_window(0, 0, self.height, self.width);
+        let chunks = bitmap.len() as u16 / BUFFER_SIZE;
+        let rest = bitmap.len() as u16 % BUFFER_SIZE;
+        let mut buf: [u8; (BUFFER_SIZE * 2) as usize] = [0x0; (BUFFER_SIZE * 2) as usize];
 
         let mut index = 0;
         for _ in 0..chunks {
@@ -345,7 +353,7 @@ impl<
                 buf[i as usize * 2 + 1] = (bitmap[index] & 0xff) as u8;
                 index += 1;
             }
-            self.send_data(buf);
+            self.send_data(&buf);
         }
         if rest > 0 {
             for i in 0..rest {
@@ -353,7 +361,7 @@ impl<
                 buf[i as usize * 2 + 1] = (bitmap[index] & 0xff) as u8;
                 index += 1;
             }
-            self.send_data(&buf[0..2 * rest as usize]);
+            self.send_data(&buf);
         }
     }
 

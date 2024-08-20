@@ -75,7 +75,7 @@ fn main() -> ! {
     let spi = spi.init(
         &mut peripherals.RESETS,
         clocks.peripheral_clock.freq(),
-        100.MHz(),
+        47.MHz(),
         &embedded_hal::spi::MODE_3,
     );
     info!("Initialized SPI");
@@ -96,19 +96,26 @@ fn main() -> ! {
         singleton!(: [u16; FRAMEBUFFER_SIZE] = [0x0000; FRAMEBUFFER_SIZE]).unwrap();
     let mut color_offset: u8 = 0x00;
 
+    let mut x: u8 = 0;
+    let mut y: u8 = 0;
+    let w: u8 = 15;
+    let h: u8 = 15;
     loop {
+        // update framebuffer
         for i in 0..FRAMEBUFFER_SIZE {
-            let y = i / SCREEN_WIDTH;
-            let x = i % SCREEN_WIDTH;
-            bmp_framebuffer[i] = rgb(
-                x.try_into().unwrap(),
-                y.try_into().unwrap(),
-                u8::MAX - color_offset,
-            );
+            let disp_y: u8 = (i / SCREEN_WIDTH).try_into().unwrap();
+            let disp_x: u8 = (i % SCREEN_WIDTH).try_into().unwrap();
+            if disp_x >= x && disp_y >= y && disp_x < (x + w) && disp_y < (y + h) {
+                bmp_framebuffer[i] = rgb(0xff, color_offset, color_offset);
+            } else {
+                bmp_framebuffer[i] = rgb(0xf, 0xf, color_offset);
+            }
         }
 
         color_offset = color_offset.checked_add(0xf).unwrap_or(0);
-        display.draw_color_buf(bmp_framebuffer);
+        x = x.checked_add(1).unwrap_or(0);
+        y = y.checked_add(2).unwrap_or(0);
+        display.draw_buf(bmp_framebuffer);
         delay.delay_ms(40);
     }
 }

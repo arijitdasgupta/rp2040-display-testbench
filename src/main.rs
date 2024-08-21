@@ -95,7 +95,7 @@ fn main() -> ! {
         &mut delay,
     );
 
-    let bmp_framebuffer = singleton!(: [u8; FRAMEBUFFER_SIZE] = [0xfe; FRAMEBUFFER_SIZE]).unwrap();
+    let bmp_framebuffer = singleton!(: [u8; FRAMEBUFFER_SIZE] = [0xff; FRAMEBUFFER_SIZE]).unwrap();
     let dma = peripherals.DMA.split(&mut peripherals.RESETS);
     let mut transfer = single_buffer::Config::new(dma.ch0, bmp_framebuffer, spi);
 
@@ -106,6 +106,7 @@ fn main() -> ! {
     let h: u8 = 10;
     let white = split_into_2(rgb(0xff, 0xff, 0xff));
     let black = split_into_2(rgb(0x0, 0x0, 0x0));
+    let mut offset: u8 = 0;
 
     loop {
         let t = transfer.start();
@@ -117,17 +118,21 @@ fn main() -> ! {
             let screen_y = (i / SCREEN_SIZE) as u8;
 
             if screen_x >= x && screen_x < x + w - 1 && screen_y > y && screen_y < y + h - 1 {
+                let color = split_into_2(rgb(screen_x, screen_y, offset));
+                frambuf[i * 2] = color.0;
+                frambuf[i * 2 + 1] = color.1;
+            } else {
                 frambuf[i * 2] = black.0;
                 frambuf[i * 2 + 1] = black.1;
-            } else {
-                frambuf[i * 2] = white.0;
-                frambuf[i * 2 + 1] = white.1;
             }
         }
 
+        // State update
+        offset = offset.checked_add(1).unwrap_or(0);
+
         transfer = single_buffer::Config::new(ch, frambuf, to);
-        x = x.checked_add(2).unwrap_or(0);
-        y = y.checked_add(4).unwrap_or(0);
+        x = x.checked_add(1).unwrap_or(0);
+        y = y.checked_add(8).unwrap_or(0);
         delay.delay_ms(10);
     }
 }

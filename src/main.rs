@@ -35,8 +35,9 @@ use bsp::hal::{
 };
 
 const FRAMEBUFFER_SIZE: usize = 57600 * 2;
+const FRAMEBUFFER_N_PIXELS: usize = 57600; // 57600 pixes, 5-6-5 RGB
 const XOSC_CRYSTAL_FREQ: u32 = 12_000_000; // Typically found in BSP crates
-const SCREEN_WIDTH: usize = 240;
+const SCREEN_SIZE: usize = 240;
 #[entry]
 fn main() -> ! {
     // Get access to device and core peripherals
@@ -95,33 +96,47 @@ fn main() -> ! {
     );
 
     let bmp_framebuffer = singleton!(: [u8; FRAMEBUFFER_SIZE] = [0xfe; FRAMEBUFFER_SIZE]).unwrap();
-    let mut color_offset: u8 = 0x00;
     let dma = peripherals.DMA.split(&mut peripherals.RESETS);
     let mut transfer = single_buffer::Config::new(dma.ch0, bmp_framebuffer, spi);
-    info!("Starting transfer");
+
+    // Display data
+    let mut x: u8 = 0;
+    let mut y: u8 = 0;
+    let w: u8 = 10;
+    let h: u8 = 10;
+    let white = split_into_2(rgb(0xff, 0xff, 0xff));
+    let black = split_into_2(rgb(0x0, 0x0, 0x0));
 
     loop {
-        info!("Looping");
-
         let t = transfer.start();
-        let (ch, from, to) = t.wait();
+        let (ch, frambuf, to) = t.wait();
 
-        // update framebuffer
-        for i in 0..from.len() {
-            if i % 2 == i % 5 {
-                from[i] = color_offset;
+        // Update framebuffer
+        for i in 0..FRAMEBUFFER_N_PIXELS {
+            let screen_x = (i % SCREEN_SIZE) as u8;
+            let screen_y = (i / SCREEN_SIZE) as u8;
+
+            if screen_x >= x && screen_x < x + w - 1 && screen_y > y && screen_y < y + h - 1 {
+                frambuf[i * 2] = black.0;
+                frambuf[i * 2 + 1] = black.1;
             } else {
-                from[i] = 0x0;
+                frambuf[i * 2] = white.0;
+                frambuf[i * 2 + 1] = white.1;
             }
         }
 
-        transfer = single_buffer::Config::new(ch, from, to);
-
-        color_offset = color_offset.checked_add(0x1).unwrap_or(0);
-
-        // display.push_buffer(bmp_framebuffer);
-        delay.delay_ms(100);
+        transfer = single_buffer::Config::new(ch, frambuf, to);
+        x = x.checked_add(2).unwrap_or(0);
+        y = y.checked_add(4).unwrap_or(0);
+        delay.delay_ms(10);
     }
+}
+
+fn split_into_2(i: u16) -> (u8, u8) {
+    let msb = (i >> 8) as u8;
+    let lsb = (i & 0xff) as u8;
+
+    (msb, lsb)
 }
 
 fn rgb(r: u8, g: u8, b: u8) -> u16 {

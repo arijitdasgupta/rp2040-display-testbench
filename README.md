@@ -1,4 +1,6 @@
-# Embedsweeper 
+# Embedsweeper
+
+Some sort of minesweeper-like game, in a RP2040 console.
 
 `probe-rs` is configured as the default runner, so you can start your program as easy as
 ```sh
